@@ -1,0 +1,602 @@
+import React, { useRef, useEffect, useState } from 'react';
+import * as THREE from 'three';
+
+const CancerChronograph3D = () => {
+  const mountRef = useRef(null);
+  const [autoRotate, setAutoRotate] = useState(true);
+  const [selectedView, setSelectedView] = useState('overview');
+  const sceneRef = useRef(null);
+  const cameraRef = useRef(null);
+  const rendererRef = useRef(null);
+
+  useEffect(() => {
+    if (!mountRef.current) return;
+
+    // Scene setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+    sceneRef.current = scene;
+
+    // Camera
+    const camera = new THREE.PerspectiveCamera(
+      60,
+      mountRef.current.clientWidth / mountRef.current.clientHeight,
+      0.1,
+      1000
+    );
+    camera.position.set(40, 35, 40);
+    camera.lookAt(0, 0, 0);
+    cameraRef.current = camera;
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    mountRef.current.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    scene.add(ambientLight);
+
+    const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    mainLight.position.set(20, 30, 20);
+    mainLight.castShadow = true;
+    mainLight.shadow.mapSize.width = 2048;
+    mainLight.shadow.mapSize.height = 2048;
+    scene.add(mainLight);
+
+    const fillLight = new THREE.DirectionalLight(0x4a90e2, 0.3);
+    fillLight.position.set(-20, 10, -20);
+    scene.add(fillLight);
+
+    // Grid floor
+    const gridHelper = new THREE.GridHelper(60, 30, 0x444444, 0x222222);
+    scene.add(gridHelper);
+
+    // Materials
+    const chamberMaterial = new THREE.MeshPhongMaterial({ 
+      color: 0x2d4059, 
+      transparent: true, 
+      opacity: 0.7,
+      shininess: 80
+    });
+    
+    const esp32Material = new THREE.MeshPhongMaterial({ 
+      color: 0x00ff88,
+      emissive: 0x004422,
+      shininess: 30
+    });
+    
+    const sensorMaterial = new THREE.MeshPhongMaterial({ 
+      color: 0xff6b6b,
+      emissive: 0x441111,
+      shininess: 50
+    });
+    
+    const heaterMaterial = new THREE.MeshPhongMaterial({ 
+      color: 0xff9f43,
+      emissive: 0x442200,
+      shininess: 40
+    });
+    
+    const stirrerMaterial = new THREE.MeshPhongMaterial({ 
+      color: 0x4ecdc4,
+      shininess: 100,
+      metalness: 0.8
+    });
+
+    const psuMaterial = new THREE.MeshPhongMaterial({
+      color: 0x555555,
+      shininess: 20
+    });
+
+    const pcMaterial = new THREE.MeshPhongMaterial({
+      color: 0x2a2a2a,
+      shininess: 10
+    });
+
+    // Function to create a single culture chamber unit
+    const createChamber = (x, z, label) => {
+      const chamberGroup = new THREE.Group();
+
+      // Main culture vessel (cylindrical)
+      const vesselGeometry = new THREE.CylinderGeometry(1.5, 1.5, 4, 32);
+      const vessel = new THREE.Mesh(vesselGeometry, chamberMaterial);
+      vessel.position.y = 2;
+      vessel.castShadow = true;
+      vessel.receiveShadow = true;
+      chamberGroup.add(vessel);
+
+      // Liquid inside (slightly smaller, different color)
+      const liquidGeometry = new THREE.CylinderGeometry(1.4, 1.4, 3, 32);
+      const liquidMaterial = new THREE.MeshPhongMaterial({
+        color: 0xffeb3b,
+        transparent: true,
+        opacity: 0.6,
+        emissive: 0x443300
+      });
+      const liquid = new THREE.Mesh(liquidGeometry, liquidMaterial);
+      liquid.position.y = 1.5;
+      chamberGroup.add(liquid);
+
+      // Base platform
+      const baseGeometry = new THREE.BoxGeometry(4, 0.3, 4);
+      const baseMaterial = new THREE.MeshPhongMaterial({ color: 0x1a1a1a });
+      const base = new THREE.Mesh(baseGeometry, baseMaterial);
+      base.position.y = 0.15;
+      base.castShadow = true;
+      base.receiveShadow = true;
+      chamberGroup.add(base);
+
+      // ESP32 controller
+      const esp32Geometry = new THREE.BoxGeometry(1.2, 0.2, 0.8);
+      const esp32 = new THREE.Mesh(esp32Geometry, esp32Material);
+      esp32.position.set(1.5, 0.4, 1.5);
+      esp32.castShadow = true;
+      chamberGroup.add(esp32);
+
+      // Temperature sensor
+      const tempSensorGeometry = new THREE.CylinderGeometry(0.1, 0.1, 1.5, 8);
+      const tempSensor = new THREE.Mesh(tempSensorGeometry, sensorMaterial);
+      tempSensor.position.set(1, 2.5, 0);
+      tempSensor.rotation.z = Math.PI / 6;
+      chamberGroup.add(tempSensor);
+
+      // pH sensor
+      const phSensorGeometry = new THREE.CylinderGeometry(0.08, 0.08, 2, 8);
+      const phSensor = new THREE.Mesh(phSensorGeometry, sensorMaterial);
+      phSensor.position.set(-1, 3, 0);
+      phSensor.rotation.z = -Math.PI / 6;
+      chamberGroup.add(phSensor);
+
+      // Optical density sensor (LED + photodiode pair)
+      const odGeometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+      const odLED = new THREE.Mesh(odGeometry, new THREE.MeshPhongMaterial({
+        color: 0x00ffff,
+        emissive: 0x00aaaa
+      }));
+      odLED.position.set(0, 2, 1.7);
+      chamberGroup.add(odLED);
+
+      const odPhotodiode = new THREE.Mesh(odGeometry, sensorMaterial);
+      odPhotodiode.position.set(0, 2, -1.7);
+      chamberGroup.add(odPhotodiode);
+
+      // Heating element (Peltier with heatsink)
+      const heatsinkGeometry = new THREE.BoxGeometry(2, 0.8, 2);
+      const heatsink = new THREE.Mesh(heatsinkGeometry, heaterMaterial);
+      heatsink.position.set(0, -0.4, 0);
+      chamberGroup.add(heatsink);
+
+      // Cooling fan (salvaged PC fan)
+      const fanGeometry = new THREE.CylinderGeometry(0.8, 0.8, 0.3, 6);
+      const fan = new THREE.Mesh(fanGeometry, new THREE.MeshPhongMaterial({
+        color: 0x333333
+      }));
+      fan.position.set(0, -0.9, 0);
+      fan.rotation.x = Math.PI / 2;
+      chamberGroup.add(fan);
+
+      // Fan blades
+      for (let i = 0; i < 4; i++) {
+        const bladeGeometry = new THREE.BoxGeometry(0.15, 0.6, 0.05);
+        const blade = new THREE.Mesh(bladeGeometry, new THREE.MeshPhongMaterial({
+          color: 0x666666
+        }));
+        blade.position.set(
+          Math.cos(i * Math.PI / 2) * 0.3,
+          -0.9,
+          Math.sin(i * Math.PI / 2) * 0.3
+        );
+        blade.rotation.x = Math.PI / 2;
+        chamberGroup.add(blade);
+      }
+
+      // Magnetic stirrer (HDD motor based)
+      const stirrerBaseGeometry = new THREE.CylinderGeometry(0.6, 0.6, 0.4, 16);
+      const stirrerBase = new THREE.Mesh(stirrerBaseGeometry, stirrerMaterial);
+      stirrerBase.position.set(0, 0.5, 0);
+      chamberGroup.add(stirrerBase);
+
+      // Stir bar inside vessel
+      const stirBarGeometry = new THREE.BoxGeometry(1, 0.15, 0.15);
+      const stirBar = new THREE.Mesh(stirBarGeometry, new THREE.MeshPhongMaterial({
+        color: 0xffffff,
+        metalness: 0.9,
+        shininess: 100
+      }));
+      stirBar.position.set(0, 0.8, 0);
+      chamberGroup.add(stirBar);
+
+      // Peristaltic pump
+      const pumpGeometry = new THREE.BoxGeometry(0.8, 1, 0.6);
+      const pump = new THREE.Mesh(pumpGeometry, new THREE.MeshPhongMaterial({
+        color: 0x7f8c8d
+      }));
+      pump.position.set(-1.8, 0.8, 1.5);
+      chamberGroup.add(pump);
+
+      // Tubing
+      const tubingGeometry = new THREE.CylinderGeometry(0.05, 0.05, 2, 8);
+      const tubing = new THREE.Mesh(tubingGeometry, new THREE.MeshPhongMaterial({
+        color: 0x95a5a6,
+        transparent: true,
+        opacity: 0.7
+      }));
+      tubing.position.set(-1.5, 2, 1.2);
+      tubing.rotation.z = Math.PI / 3;
+      chamberGroup.add(tubing);
+
+      // Camera mount (ESP32-CAM)
+      const cameraMountGeometry = new THREE.CylinderGeometry(0.15, 0.15, 3, 8);
+      const cameraMount = new THREE.Mesh(cameraMountGeometry, new THREE.MeshPhongMaterial({
+        color: 0x34495e
+      }));
+      cameraMount.position.set(2, 4, 2);
+      chamberGroup.add(cameraMount);
+
+      const cameraGeometry = new THREE.BoxGeometry(0.5, 0.4, 0.3);
+      const camera = new THREE.Mesh(cameraGeometry, esp32Material);
+      camera.position.set(1.5, 5.5, 1.5);
+      camera.rotation.y = -Math.PI / 4;
+      camera.rotation.x = -Math.PI / 6;
+      chamberGroup.add(camera);
+
+      // Label
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.width = 256;
+      canvas.height = 64;
+      context.fillStyle = '#00ff88';
+      context.font = 'Bold 32px Arial';
+      context.textAlign = 'center';
+      context.fillText(`CH-${label}`, 128, 40);
+      
+      const texture = new THREE.CanvasTexture(canvas);
+      const labelGeometry = new THREE.PlaneGeometry(2, 0.5);
+      const labelMaterial = new THREE.MeshBasicMaterial({ 
+        map: texture, 
+        transparent: true,
+        side: THREE.DoubleSide
+      });
+      const labelMesh = new THREE.Mesh(labelGeometry, labelMaterial);
+      labelMesh.position.set(0, 5, 0);
+      labelMesh.rotation.x = -Math.PI / 6;
+      chamberGroup.add(labelMesh);
+
+      chamberGroup.position.set(x, 0, z);
+      return chamberGroup;
+    };
+
+    // Create 10 chamber array (2 rows of 5)
+    const chambers = [];
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 5; col++) {
+        const x = (col - 2) * 8;
+        const z = (row - 0.5) * 8;
+        const chamber = createChamber(x, z, row * 5 + col + 1);
+        chambers.push(chamber);
+        scene.add(chamber);
+      }
+    }
+
+    // Central control station - Salvaged desktop PC
+    const pcGroup = new THREE.Group();
+    
+    // PC case
+    const pcCaseGeometry = new THREE.BoxGeometry(6, 8, 4);
+    const pcCase = new THREE.Mesh(pcCaseGeometry, pcMaterial);
+    pcCase.position.y = 4;
+    pcCase.castShadow = true;
+    pcGroup.add(pcCase);
+
+    // PC front panel LEDs
+    const ledGeometry = new THREE.CircleGeometry(0.1, 16);
+    const ledMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, emissive: 0x00ff00 });
+    const powerLED = new THREE.Mesh(ledGeometry, ledMaterial);
+    powerLED.position.set(0, 2, 2.01);
+    pcGroup.add(powerLED);
+
+    const hddLED = new THREE.Mesh(ledGeometry, new THREE.MeshBasicMaterial({ 
+      color: 0xff0000, 
+      emissive: 0xff0000 
+    }));
+    hddLED.position.set(0, 1.5, 2.01);
+    pcGroup.add(hddLED);
+
+    // Monitor
+    const monitorStandGeometry = new THREE.CylinderGeometry(0.3, 0.5, 1, 16);
+    const monitorStand = new THREE.Mesh(monitorStandGeometry, new THREE.MeshPhongMaterial({
+      color: 0x2c3e50
+    }));
+    monitorStand.position.set(0, 8.5, 0);
+    pcGroup.add(monitorStand);
+
+    const monitorGeometry = new THREE.BoxGeometry(5, 3.5, 0.3);
+    const monitor = new THREE.Mesh(monitorGeometry, new THREE.MeshPhongMaterial({
+      color: 0x1a1a1a
+    }));
+    monitor.position.set(0, 10.5, 0);
+    pcGroup.add(monitor);
+
+    // Monitor screen
+    const screenGeometry = new THREE.PlaneGeometry(4.5, 3);
+    const screenMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0x1e3a5f,
+      emissive: 0x0a1a2f
+    });
+    const screen = new THREE.Mesh(screenGeometry, screenMaterial);
+    screen.position.set(0, 10.5, 0.16);
+    pcGroup.add(screen);
+
+    pcGroup.position.set(25, 0, 0);
+    scene.add(pcGroup);
+
+    // PSU (salvaged PC power supply)
+    const psuGroup = new THREE.Group();
+    
+    const psuGeometry = new THREE.BoxGeometry(5, 3, 6);
+    const psu = new THREE.Mesh(psuGeometry, psuMaterial);
+    psu.position.y = 1.5;
+    psu.castShadow = true;
+    psuGroup.add(psu);
+
+    // PSU fan grill
+    const fanGrillGeometry = new THREE.TorusGeometry(0.8, 0.05, 8, 16);
+    const fanGrill = new THREE.Mesh(fanGrillGeometry, new THREE.MeshPhongMaterial({
+      color: 0x333333
+    }));
+    fanGrill.position.set(0, 1.5, 3.01);
+    psuGroup.add(fanGrill);
+
+    // Power cables going to chambers
+    for (let i = 0; i < 5; i++) {
+      const cableGeometry = new THREE.CylinderGeometry(0.1, 0.1, 15, 8);
+      const cable = new THREE.Mesh(cableGeometry, new THREE.MeshPhongMaterial({
+        color: i % 2 === 0 ? 0xff0000 : 0x000000
+      }));
+      cable.position.set(-15 + i * 8, 0.5, 5);
+      cable.rotation.z = Math.PI / 2;
+      scene.add(cable);
+    }
+
+    psuGroup.position.set(0, 0, 15);
+    scene.add(psuGroup);
+
+    // Wiring/relay board
+    const relayBoardGeometry = new THREE.BoxGeometry(8, 0.2, 4);
+    const relayBoard = new THREE.Mesh(relayBoardGeometry, new THREE.MeshPhongMaterial({
+      color: 0x27ae60
+    }));
+    relayBoard.position.set(0, 0.5, 10);
+    scene.add(relayBoard);
+
+    // Relays on board
+    for (let i = 0; i < 10; i++) {
+      const relayGeometry = new THREE.BoxGeometry(0.5, 0.3, 0.4);
+      const relay = new THREE.Mesh(relayGeometry, new THREE.MeshPhongMaterial({
+        color: 0x3498db
+      }));
+      relay.position.set(-3.5 + i * 0.8, 0.75, 10);
+      scene.add(relay);
+    }
+
+    // Animation
+    let rotationSpeed = 0.002;
+    const animate = () => {
+      requestAnimationFrame(animate);
+
+      if (autoRotate) {
+        scene.rotation.y += rotationSpeed;
+      }
+
+      // Animate stir bars
+      chambers.forEach((chamber, idx) => {
+        const stirBar = chamber.children.find(child => 
+          child.geometry && child.geometry.type === 'BoxGeometry' && 
+          child.material.color.getHex() === 0xffffff
+        );
+        if (stirBar) {
+          stirBar.rotation.y += 0.05 + (idx * 0.01);
+        }
+      });
+
+      // Animate fan blades
+      chambers.forEach(chamber => {
+        chamber.children.forEach(child => {
+          if (child.geometry && child.geometry.type === 'BoxGeometry' && 
+              child.material.color.getHex() === 0x666666) {
+            child.rotation.x += 0.1;
+          }
+        });
+      });
+
+      renderer.render(scene, camera);
+    };
+
+    animate();
+
+    // Handle window resize
+    const handleResize = () => {
+      if (!mountRef.current) return;
+      camera.aspect = mountRef.current.clientWidth / mountRef.current.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    // Mouse controls
+    let isDragging = false;
+    let previousMousePosition = { x: 0, y: 0 };
+
+    const handleMouseDown = (e) => {
+      isDragging = true;
+      previousMousePosition = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleMouseMove = (e) => {
+      if (!isDragging) return;
+      
+      const deltaX = e.clientX - previousMousePosition.x;
+      const deltaY = e.clientY - previousMousePosition.y;
+      
+      scene.rotation.y += deltaX * 0.005;
+      scene.rotation.x += deltaY * 0.005;
+      
+      previousMousePosition = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleMouseUp = () => {
+      isDragging = false;
+    };
+
+    const handleWheel = (e) => {
+      e.preventDefault();
+      const zoomSpeed = 0.1;
+      camera.position.multiplyScalar(1 + (e.deltaY > 0 ? zoomSpeed : -zoomSpeed));
+    };
+
+    renderer.domElement.addEventListener('mousedown', handleMouseDown);
+    renderer.domElement.addEventListener('mousemove', handleMouseMove);
+    renderer.domElement.addEventListener('mouseup', handleMouseUp);
+    renderer.domElement.addEventListener('wheel', handleWheel);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      renderer.domElement.removeEventListener('mousedown', handleMouseDown);
+      renderer.domElement.removeEventListener('mousemove', handleMouseMove);
+      renderer.domElement.removeEventListener('mouseup', handleMouseUp);
+      renderer.domElement.removeEventListener('wheel', handleWheel);
+      if (mountRef.current) {
+        mountRef.current.removeChild(renderer.domElement);
+      }
+      renderer.dispose();
+    };
+  }, [autoRotate]);
+
+  const handleViewChange = (view) => {
+    setSelectedView(view);
+    const camera = cameraRef.current;
+    const scene = sceneRef.current;
+    
+    switch(view) {
+      case 'overview':
+        camera.position.set(40, 35, 40);
+        camera.lookAt(0, 0, 0);
+        scene.rotation.set(0, 0, 0);
+        break;
+      case 'chamber':
+        camera.position.set(5, 10, 15);
+        camera.lookAt(0, 0, 0);
+        scene.rotation.set(0, 0, 0);
+        break;
+      case 'control':
+        camera.position.set(25, 15, 20);
+        camera.lookAt(25, 5, 0);
+        scene.rotation.set(0, 0, 0);
+        break;
+      case 'top':
+        camera.position.set(0, 50, 0);
+        camera.lookAt(0, 0, 0);
+        scene.rotation.set(0, 0, 0);
+        break;
+    }
+  };
+
+  return (
+    <div className="w-full h-screen bg-gray-900 flex flex-col">
+      <div className="bg-gray-800 p-4 shadow-lg border-b-2 border-cyan-500">
+        <h1 className="text-3xl font-bold text-cyan-400 mb-2">Cancer Chronograph - Evolution Observatory</h1>
+        <p className="text-gray-300 text-sm mb-3">10-Chamber Distributed System for Parallel Cancer Evolution Studies</p>
+        
+        <div className="flex flex-wrap gap-2 mb-3">
+          <button
+            onClick={() => handleViewChange('overview')}
+            className={`px-4 py-2 rounded ${selectedView === 'overview' ? 'bg-cyan-600' : 'bg-gray-700'} text-white hover:bg-cyan-500 transition`}
+          >
+            Overview
+          </button>
+          <button
+            onClick={() => handleViewChange('chamber')}
+            className={`px-4 py-2 rounded ${selectedView === 'chamber' ? 'bg-cyan-600' : 'bg-gray-700'} text-white hover:bg-cyan-500 transition`}
+          >
+            Chamber Detail
+          </button>
+          <button
+            onClick={() => handleViewChange('control')}
+            className={`px-4 py-2 rounded ${selectedView === 'control' ? 'bg-cyan-600' : 'bg-gray-700'} text-white hover:bg-cyan-500 transition`}
+          >
+            Control Station
+          </button>
+          <button
+            onClick={() => handleViewChange('top')}
+            className={`px-4 py-2 rounded ${selectedView === 'top' ? 'bg-cyan-600' : 'bg-gray-700'} text-white hover:bg-cyan-500 transition`}
+          >
+            Top View
+          </button>
+          <button
+            onClick={() => setAutoRotate(!autoRotate)}
+            className={`px-4 py-2 rounded ${autoRotate ? 'bg-green-600' : 'bg-gray-700'} text-white hover:bg-green-500 transition`}
+          >
+            {autoRotate ? 'Stop Rotation' : 'Auto Rotate'}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+          <div className="bg-gray-700 p-2 rounded">
+            <span className="text-cyan-400 font-bold">Chambers:</span>
+            <span className="text-white ml-1">10 Units</span>
+          </div>
+          <div className="bg-gray-700 p-2 rounded">
+            <span className="text-green-400 font-bold">ESP32:</span>
+            <span className="text-white ml-1">10 Controllers</span>
+          </div>
+          <div className="bg-gray-700 p-2 rounded">
+            <span className="text-red-400 font-bold">Sensors:</span>
+            <span className="text-white ml-1">30+ Total</span>
+          </div>
+          <div className="bg-gray-700 p-2 rounded">
+            <span className="text-yellow-400 font-bold">Cost:</span>
+            <span className="text-white ml-1">~$550</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 relative" ref={mountRef}>
+        <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white p-3 rounded text-xs max-w-xs">
+          <h3 className="font-bold text-cyan-400 mb-2">Component Legend:</h3>
+          <div className="space-y-1">
+            <div><span className="inline-block w-3 h-3 bg-cyan-600 mr-2"></span>Culture Vessels (Yellow liquid)</div>
+            <div><span className="inline-block w-3 h-3 mr-2" style={{backgroundColor: '#00ff88'}}></span>ESP32 Controllers</div>
+            <div><span className="inline-block w-3 h-3 bg-red-400 mr-2"></span>Temp/pH Sensors</div>
+            <div><span className="inline-block w-3 h-3 bg-orange-400 mr-2"></span>Peltier Heaters + PC Fans</div>
+            <div><span className="inline-block w-3 h-3 mr-2" style={{backgroundColor: '#4ecdc4'}}></span>Magnetic Stirrers (HDD motors)</div>
+            <div><span className="inline-block w-3 h-3 bg-gray-500 mr-2"></span>Salvaged PC + PSU</div>
+          </div>
+          <p className="mt-2 text-gray-400 italic">Drag to rotate • Scroll to zoom</p>
+        </div>
+
+        <div className="absolute top-4 right-4 bg-black bg-opacity-70 text-white p-3 rounded text-xs max-w-sm">
+          <h3 className="font-bold text-green-400 mb-2">System Features:</h3>
+          <ul className="space-y-1 list-disc list-inside">
+            <li>Automated temperature control (Peltier + PID)</li>
+            <li>Real-time optical density monitoring</li>
+            <li>Magnetic stirring (salvaged HDD motors)</li>
+            <li>pH monitoring in each chamber</li>
+            <li>ESP32-CAM time-lapse imaging</li>
+            <li>Peristaltic pumps for serial dilution</li>
+            <li>Salvaged PC PSU powers all units</li>
+            <li>Desktop PC for data analysis & ML</li>
+            <li>Parallel evolution tracking (1000+ generations)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default CancerChronograph3D;
